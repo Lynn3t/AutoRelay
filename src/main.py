@@ -89,10 +89,6 @@ async def process_subscription(
     ok = sum(1 for n in nodes if n.test_success)
     logger.info("[%s] 测试完成: %d/%d 成功", sub_name, ok, len(nodes))
 
-    if ok == 0:
-        logger.warning("[%s] 所有节点测试失败，跳过上传", sub_name)
-        return
-
     # 4. 去重 (基于域名 + 入口IP + 出口IP，需在测试后执行)
     before = len(nodes)
     nodes = deduplicate(nodes)
@@ -112,10 +108,10 @@ async def process_subscription(
     # 6. 重命名
     rename_nodes(nodes)
 
-    # 7. 生成 base64 编码的 URI 订阅
-    successful = [n for n in nodes if n.test_success]
-    b64_content = nodes_to_base64(successful)
-    logger.info("[%s] 生成 base64 订阅: %d 个节点", sub_name, len(successful))
+    # 7. 生成 base64 编码的 URI 订阅 (成功节点重命名，失败节点保留原名)
+    b64_content = nodes_to_base64(nodes)
+    successful = sum(1 for n in nodes if n.test_success)
+    logger.info("[%s] 生成 base64 订阅: %d 个节点 (%d 成功)", sub_name, len(nodes), successful)
 
     # 8. 上传到独立 Gist
     if not gist_token:
