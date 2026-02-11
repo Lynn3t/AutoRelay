@@ -63,7 +63,7 @@ async def process_subscription(
 ) -> None:
     """处理单条订阅：解析 → DNS → 测试 → 重命名 → base64 → 上传 gist。"""
     logger.info("=" * 60)
-    logger.info("处理订阅: [%s] %s", sub_name, sub_url[:80])
+    logger.info("处理订阅: [%s]", sub_name)
     logger.info("=" * 60)
 
     # 1. 解析

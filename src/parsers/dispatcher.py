@@ -22,15 +22,15 @@ async def fetch_and_parse(url: str, timeout: int = 30) -> list[Node]:
 
     # 按优先级检测格式
     if is_clash_yaml(content):
-        logger.info("检测到 Clash YAML 格式: %s", url[:80])
+        logger.info("检测到 Clash YAML 格式")
         return parse_clash_yaml(content)
 
     if is_singbox_json(content):
-        logger.info("检测到 sing-box JSON 格式: %s", url[:80])
+        logger.info("检测到 sing-box JSON 格式")
         return parse_singbox_json(content)
 
     # 默认尝试 base64 / URI 列表
-    logger.info("尝试 base64/URI 列表格式: %s", url[:80])
+    logger.info("尝试 base64/URI 列表格式")
     return parse_uri_list(content)
 
 
@@ -43,5 +43,5 @@ async def _fetch(url: str, timeout: int) -> str:
                 resp.raise_for_status()
                 return await resp.text()
     except Exception as e:
-        logger.error("抓取订阅失败: %s — %s", url[:80], e)
+        logger.error("抓取订阅失败: %s", type(e).__name__)
         return ""
