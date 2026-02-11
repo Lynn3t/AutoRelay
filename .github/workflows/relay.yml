@@ -31,25 +31,11 @@ jobs:
           chmod +x ./sing-box
           ./sing-box version
 
-      - name: Download IP2Location database
-        run: |
-          wget -q -O ip2proxy.zip "https://www.ip2location.com/download/?token=${{ secrets.IP2LOCATION_TOKEN }}&file=PX4LITECSV"
-          unzip -o ip2proxy.zip -d ./ip2location/
-          ls -la ./ip2location/
-
-      - name: Find IP2Location CSV path
-        id: ip2loc
-        run: |
-          CSV_PATH=$(find ./ip2location -name "*.CSV" -o -name "*.csv" | head -1)
-          echo "csv_path=${CSV_PATH}" >> $GITHUB_OUTPUT
-          echo "Found CSV: ${CSV_PATH}"
-
       - name: Run AutoRelay
         env:
           SUB_URLS: ${{ secrets.SUB_URLS }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           SINGBOX_PATH: ./sing-box
-          IP2LOCATION_CSV: ${{ steps.ip2loc.outputs.csv_path }}
           BATCH_SIZE: "10"
           TEST_TIMEOUT: "15"
         run: python -m src.main

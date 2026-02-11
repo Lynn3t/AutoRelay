@@ -15,7 +15,7 @@ import sys
 
 from src.dns_resolver import resolve_entry_ips
 from src.gist_uploader import upload_to_gist
-from src.ip_lookup import IP2LocationDB
+from src.ip_lookup import lookup_isps
 from src.models import Node
 from src.parsers.dispatcher import fetch_and_parse
 from src.renamer import rename_nodes
@@ -48,20 +48,18 @@ def parse_sub_line(line: str) -> tuple[str, str]:
     if "|" in line:
         name, url = line.split("|", 1)
         return name.strip(), url.strip()
-    # 无别名则用序号
     return "", line
 
 
 async def process_subscription(
     sub_name: str,
     sub_url: str,
-    db: IP2LocationDB,
     singbox_path: str,
     batch_size: int,
     test_timeout: int,
     gist_token: str,
 ) -> None:
-    """处理单条订阅：解析 → DNS → 测试 → 重命名 → base64 → 上传 gist。"""
+    """处理单条订阅：解析 → DNS → 测试(含出口ISP) → 入口ISP → 重命名 → base64 → gist。"""
     logger.info("=" * 60)
     logger.info("处理订阅: [%s]", sub_name)
     logger.info("=" * 60)
@@ -81,22 +79,12 @@ async def process_subscription(
     logger.info("[%s] 解析入口 IP (中国 DNS)...", sub_name)
     await resolve_entry_ips(nodes)
 
-    # 4. 查询入口 ISP
-    for node in nodes:
-        if node.entry_ip:
-            node.entry_isp = db.lookup(node.entry_ip)
-
     resolved = sum(1 for n in nodes if n.entry_ip)
     logger.info("[%s] 入口 IP 解析: %d/%d", sub_name, resolved, len(nodes))
 
-    # 5. 并发测试出口 IP
+    # 4. 并发测试出口 IP + 出口 ISP (通过代理查 ip-api.com)
     logger.info("[%s] 测试出口 IP (batch=%d, timeout=%ds)...", sub_name, batch_size, test_timeout)
     await test_exit_ips(nodes, singbox_path, batch_size, test_timeout)
-
-    # 6. 查询出口 ISP
-    for node in nodes:
-        if node.exit_ip:
-            node.exit_isp = db.lookup(node.exit_ip)
 
     ok = sum(1 for n in nodes if n.test_success)
     logger.info("[%s] 测试完成: %d/%d 成功", sub_name, ok, len(nodes))
@@ -105,15 +93,24 @@ async def process_subscription(
         logger.warning("[%s] 所有节点测试失败，跳过上传", sub_name)
         return
 
-    # 7. 重命名
+    # 5. 批量查询入口 ISP (ip-api.com batch API, 注意限速)
+    entry_ips = [n.entry_ip for n in nodes if n.entry_ip and n.test_success]
+    if entry_ips:
+        logger.info("[%s] 查询入口 ISP (%d 个 IP)...", sub_name, len(entry_ips))
+        isp_map = await lookup_isps(entry_ips)
+        for node in nodes:
+            if node.entry_ip and node.entry_ip in isp_map:
+                node.entry_isp = isp_map[node.entry_ip]
+
+    # 6. 重命名
     rename_nodes(nodes)
 
-    # 8. 生成 base64 编码的 URI 订阅
+    # 7. 生成 base64 编码的 URI 订阅
     successful = [n for n in nodes if n.test_success]
     b64_content = nodes_to_base64(successful)
     logger.info("[%s] 生成 base64 订阅: %d 个节点", sub_name, len(successful))
 
-    # 9. 上传到独立 Gist
+    # 8. 上传到独立 Gist
     if not gist_token:
         logger.warning("[%s] GIST_TOKEN 未设置，输出到 stdout", sub_name)
         print(f"\n--- {sub_name} ---")
@@ -132,17 +129,8 @@ async def run() -> None:
 
     gist_token = os.environ.get("GIST_TOKEN", "")
     singbox_path = os.environ.get("SINGBOX_PATH", "./sing-box")
-    ip2loc_csv = os.environ.get("IP2LOCATION_CSV", "")
     batch_size = int(os.environ.get("BATCH_SIZE", "10"))
     test_timeout = int(os.environ.get("TEST_TIMEOUT", "15"))
-
-    # ---- 加载 IP2Location 数据库 ----
-    if not ip2loc_csv or not os.path.exists(ip2loc_csv):
-        logger.error("IP2Location CSV 文件不存在: %s", ip2loc_csv)
-        sys.exit(1)
-
-    logger.info("加载 IP2Location 数据库: %s", ip2loc_csv)
-    db = IP2LocationDB(ip2loc_csv)
 
     # ---- 解析订阅列表 ----
     sub_lines = [l.strip() for l in sub_urls_raw.strip().splitlines() if l.strip()]
@@ -159,7 +147,7 @@ async def run() -> None:
     for sub_name, sub_url in subs:
         try:
             await process_subscription(
-                sub_name, sub_url, db,
+                sub_name, sub_url,
                 singbox_path, batch_size, test_timeout,
                 gist_token,
             )
