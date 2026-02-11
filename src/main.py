@@ -116,8 +116,8 @@ async def process_subscription(
         print(f"\n--- {sub_name} ---")
         print(b64_content)
     else:
-        url = upload_to_gist(gist_token, b64_content, sub_name)
-        logger.info("[%s] 已上传 → %s", sub_name, url)
+        upload_to_gist(gist_token, b64_content, sub_name)
+        logger.info("[%s] 已上传到 Gist", sub_name)
 
 
 async def run() -> None:

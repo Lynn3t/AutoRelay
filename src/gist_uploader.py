@@ -40,7 +40,7 @@ def upload_to_gist(
     }
 
     if gist_id:
-        logger.info("更新已有 Gist [%s]: %s", sub_name, gist_id)
+        logger.info("更新已有 Gist [%s]", sub_name)
         resp = requests.patch(
             f"https://api.github.com/gists/{gist_id}",
             headers=headers,
@@ -65,12 +65,9 @@ def upload_to_gist(
     if filename in files:
         raw_url = files[filename].get("raw_url", "")
 
-    gist_url = data.get("html_url", "")
-    logger.info("Gist [%s] URL: %s", sub_name, gist_url)
-    if raw_url:
-        logger.info("Gist [%s] Raw URL: %s", sub_name, raw_url)
+    logger.info("Gist [%s] 上传成功", sub_name)
 
-    return raw_url or gist_url
+    return raw_url or data.get("html_url", "")
 
 
 def _find_existing_gist(headers: dict, description: str) -> Optional[str]:
