@@ -1,4 +1,8 @@
-"""节点重命名 — 格式: 入口ISP - 出口ISP。"""
+"""节点重命名 — 格式: [国家] 入口ISP - [国家] 出口ISP。
+
+直连节点（入口与出口同一IP段）只显示出口信息。
+中国节点不显示国家名。
+"""
 
 from __future__ import annotations
 
@@ -24,7 +28,36 @@ ISP_SIMPLIFY: list[tuple[str, str]] = [
     ("baidu", "百度云"),
     ("ucloud", "UCloud"),
     ("bytedance", "字节"),
-    # 国际
+    ("jd cloud", "京东云"),
+    ("ksyun", "金山云"),
+    # 港台
+    ("hinet", "中华电信"),
+    ("chunghwa", "中华电信"),
+    ("taiwan mobile", "台湾大哥大"),
+    ("aptg", "远传电信"),
+    ("fareastone", "远传电信"),
+    ("seednet", "SeedNet"),
+    ("pccw", "PCCW"),
+    ("hong kong broadband", "HKBN"),
+    ("hkt", "HKT"),
+    ("smartone", "SmarTone"),
+    ("hutchison", "和记"),
+    # 日韩
+    ("softbank", "SoftBank"),
+    ("ntt", "NTT"),
+    ("kddi", "KDDI"),
+    ("iij", "IIJ"),
+    ("sakura", "Sakura"),
+    ("sk broadband", "SK"),
+    ("kt corporation", "KT"),
+    ("lg uplus", "LG U+"),
+    ("lg powercomm", "LG U+"),
+    # 东南亚
+    ("singtel", "Singtel"),
+    ("starhub", "StarHub"),
+    ("m1 limited", "M1"),
+    ("viewqwest", "ViewQwest"),
+    # 北美
     ("amazon", "AWS"),
     ("microsoft", "Azure"),
     ("google", "GCP"),
@@ -33,8 +66,6 @@ ISP_SIMPLIFY: list[tuple[str, str]] = [
     ("linode", "Linode"),
     ("vultr", "Vultr"),
     ("oracle", "Oracle"),
-    ("hetzner", "Hetzner"),
-    ("ovh", "OVH"),
     ("bandwagon", "搬瓦工"),
     ("cogent", "Cogent"),
     ("comcast", "Comcast"),
@@ -42,20 +73,109 @@ ISP_SIMPLIFY: list[tuple[str, str]] = [
     ("at&t", "AT&T"),
     ("att services", "AT&T"),
     ("charter", "Charter"),
+    ("spectrum", "Spectrum"),
     ("t-mobile", "T-Mobile"),
     ("sprint", "Sprint"),
-    ("softbank", "SoftBank"),
-    ("ntt", "NTT"),
-    ("kddi", "KDDI"),
-    ("sk broadband", "SK"),
-    ("kt corporation", "KT"),
-    ("hinet", "HiNet"),
-    ("chunghwa", "中华电信"),
-    ("pccw", "PCCW"),
-    ("hong kong broadband", "HKBN"),
-    ("singtel", "Singtel"),
-    ("starhub", "StarHub"),
+    ("frontier", "Frontier"),
+    ("wave broadband", "Wave"),
+    ("waveg", "Wave"),
+    ("cox comm", "Cox"),
+    ("centurylink", "CenturyLink"),
+    ("lumen", "Lumen"),
+    ("zayo", "Zayo"),
+    ("he.net", "HE"),
+    ("hurricane", "HE"),
+    ("quadranet", "QuadraNet"),
+    ("multacom", "Multacom"),
+    ("psychz", "Psychz"),
+    ("colocrossing", "ColoCrossing"),
+    ("buyvm", "BuyVM"),
+    ("racknerd", "RackNerd"),
+    ("hostdare", "HostDare"),
+    # 云/VPS 服务商
+    ("akari", "Akari"),
+    ("akari networks", "Akari"),
+    ("dmit", "DMIT"),
+    ("gigsgigscloud", "GigsGigs"),
+    ("rackspace", "Rackspace"),
+    ("contabo", "Contabo"),
+    ("kamatera", "Kamatera"),
+    ("hostwinds", "HostWinds"),
+    ("scaleway", "Scaleway"),
+    ("upcloud", "UpCloud"),
+    ("ionos", "IONOS"),
+    ("lightsail", "Lightsail"),
+    ("netlify", "Netlify"),
+    ("fly.io", "Fly.io"),
+    # 欧洲
+    ("hetzner", "Hetzner"),
+    ("ovh", "OVH"),
+    ("online s.a.s", "Scaleway"),
+    ("iliad", "Iliad"),
+    ("vodafone", "Vodafone"),
+    ("deutsche telekom", "DT"),
+    ("british telecom", "BT"),
+    ("orange", "Orange"),
+    ("telefonica", "Telefonica"),
+    ("telia", "Telia"),
+    ("swisscom", "Swisscom"),
+    ("m247", "M247"),
+    ("datacamp", "DataCamp"),
+    ("leaseweb", "LeaseWeb"),
+    # 其他
+    ("choopa", "Vultr"),
+    ("the constant company", "Vultr"),
+    ("hostinger", "Hostinger"),
+    ("akamai", "Akamai"),
+    ("fastly", "Fastly"),
 ]
+
+# 国家名翻译映射 (ip-api.com 返回的英文国家名 → 中文)
+COUNTRY_TRANSLATE: dict[str, str] = {
+    "China": "中国",
+    "Hong Kong": "香港",
+    "Taiwan": "台湾",
+    "Japan": "日本",
+    "South Korea": "韩国",
+    "Singapore": "新加坡",
+    "United States": "美国",
+    "Canada": "加拿大",
+    "United Kingdom": "英国",
+    "Germany": "德国",
+    "France": "法国",
+    "Netherlands": "荷兰",
+    "Australia": "澳大利亚",
+    "Russia": "俄罗斯",
+    "India": "印度",
+    "Brazil": "巴西",
+    "Thailand": "泰国",
+    "Vietnam": "越南",
+    "Philippines": "菲律宾",
+    "Malaysia": "马来西亚",
+    "Indonesia": "印尼",
+    "Turkey": "土耳其",
+    "Italy": "意大利",
+    "Spain": "西班牙",
+    "Sweden": "瑞典",
+    "Switzerland": "瑞士",
+    "Ireland": "爱尔兰",
+    "Finland": "芬兰",
+    "Norway": "挪威",
+    "Poland": "波兰",
+    "Romania": "罗马尼亚",
+    "Ukraine": "乌克兰",
+    "South Africa": "南非",
+    "Argentina": "阿根廷",
+    "Mexico": "墨西哥",
+    "Chile": "智利",
+    "Colombia": "哥伦比亚",
+    "Israel": "以色列",
+    "United Arab Emirates": "阿联酋",
+    "Kazakhstan": "哈萨克斯坦",
+}
+
+# 视为"中国"不需要显示国家名的地区
+CHINA_REGIONS = {"中国", "China"}
 
 
 def simplify_isp(isp: str) -> str:
@@ -72,6 +192,35 @@ def simplify_isp(isp: str) -> str:
     return isp
 
 
+def translate_country(country: str | None) -> str:
+    """将英文国家名翻译为中文，没有映射则保留原名。"""
+    if not country:
+        return ""
+    return COUNTRY_TRANSLATE.get(country, country)
+
+
+def is_direct_connection(entry_ip: str | None, exit_ip: str | None) -> bool:
+    """判断是否为直连（入口和出口在同一 /24 网段）。"""
+    if not entry_ip or not exit_ip:
+        return False
+    try:
+        entry_parts = entry_ip.split(".")
+        exit_parts = exit_ip.split(".")
+        if len(entry_parts) == 4 and len(exit_parts) == 4:
+            return entry_parts[:3] == exit_parts[:3]
+    except (ValueError, IndexError):
+        pass
+    return False
+
+
+def _format_label(country: str | None, isp: str) -> str:
+    """格式化单端标签: 中国不显示国家，其它显示 '国家 ISP'。"""
+    cn = translate_country(country)
+    if not cn or cn in CHINA_REGIONS:
+        return isp
+    return f"{cn} {isp}"
+
+
 def rename_nodes(nodes: list[Node]) -> None:
     """重命名所有成功测试的节点，处理重复名称。"""
     name_count: dict[str, int] = {}
@@ -80,14 +229,19 @@ def rename_nodes(nodes: list[Node]) -> None:
         if not node.test_success:
             continue
 
-        entry = simplify_isp(node.entry_isp or "")
-        exit_ = simplify_isp(node.exit_isp or "")
-        base_name = f"{entry} - {exit_}"
+        exit_isp = simplify_isp(node.exit_isp or "")
+
+        if is_direct_connection(node.entry_ip, node.exit_ip):
+            # 直连: 只显示出口信息
+            base_name = _format_label(node.exit_country, exit_isp)
+        else:
+            entry_isp = simplify_isp(node.entry_isp or "")
+            entry_label = _format_label(node.entry_country, entry_isp)
+            exit_label = _format_label(node.exit_country, exit_isp)
+            base_name = f"{entry_label} - {exit_label}"
 
         name_count[base_name] = name_count.get(base_name, 0) + 1
         if name_count[base_name] > 1:
             node.final_name = f"{base_name} #{name_count[base_name]}"
         else:
             node.final_name = base_name
-
-    # 如果某个 base_name 只出现 1 次，第一个不需要加序号 — 上面逻辑已自然处理

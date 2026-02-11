@@ -31,7 +31,7 @@ logger = logging.getLogger("autorelay")
 
 
 def deduplicate(nodes: list[Node]) -> list[Node]:
-    """按 (server, port, proxy_type) 去重，保留首个。"""
+    """按 (server, entry_ip, exit_ip) 去重，保留首个。"""
     seen: set[tuple] = set()
     result: list[Node] = []
     for node in nodes:
@@ -59,7 +59,7 @@ async def process_subscription(
     test_timeout: int,
     gist_token: str,
 ) -> None:
-    """处理单条订阅：解析 → DNS → 测试(含出口ISP) → 入口ISP → 重命名 → base64 → gist。"""
+    """处理单条订阅：解析 → DNS → 测试(含出口ISP) → 去重 → 入口ISP → 重命名 → base64 → gist。"""
     logger.info("=" * 60)
     logger.info("处理订阅: [%s]", sub_name)
     logger.info("=" * 60)
@@ -70,19 +70,16 @@ async def process_subscription(
         logger.warning("[%s] 未解析到节点，跳过", sub_name)
         return
 
-    # 2. 去重
-    before = len(nodes)
-    nodes = deduplicate(nodes)
-    logger.info("[%s] 解析 %d 个节点 (去重后 %d)", sub_name, before, len(nodes))
+    logger.info("[%s] 解析 %d 个节点", sub_name, len(nodes))
 
-    # 3. DNS 解析入口 IP
+    # 2. DNS 解析入口 IP
     logger.info("[%s] 解析入口 IP (中国 DNS)...", sub_name)
     await resolve_entry_ips(nodes)
 
     resolved = sum(1 for n in nodes if n.entry_ip)
     logger.info("[%s] 入口 IP 解析: %d/%d", sub_name, resolved, len(nodes))
 
-    # 4. 并发测试出口 IP + 出口 ISP (通过代理查 ip-api.com)
+    # 3. 并发测试出口 IP + 出口 ISP (通过代理查 ip-api.com)
     logger.info("[%s] 测试出口 IP (batch=%d, timeout=%ds)...", sub_name, batch_size, test_timeout)
     await test_exit_ips(nodes, singbox_path, batch_size, test_timeout)
 
@@ -93,14 +90,21 @@ async def process_subscription(
         logger.warning("[%s] 所有节点测试失败，跳过上传", sub_name)
         return
 
-    # 5. 批量查询入口 ISP (ip-api.com batch API, 注意限速)
+    # 4. 去重 (基于域名 + 入口IP + 出口IP，需在测试后执行)
+    before = len(nodes)
+    nodes = deduplicate(nodes)
+    logger.info("[%s] 去重: %d → %d", sub_name, before, len(nodes))
+
+    # 5. 批量查询入口 ISP + 国家 (ip-api.com batch API)
     entry_ips = [n.entry_ip for n in nodes if n.entry_ip and n.test_success]
     if entry_ips:
         logger.info("[%s] 查询入口 ISP (%d 个 IP)...", sub_name, len(entry_ips))
         isp_map = await lookup_isps(entry_ips)
         for node in nodes:
             if node.entry_ip and node.entry_ip in isp_map:
-                node.entry_isp = isp_map[node.entry_ip]
+                info = isp_map[node.entry_ip]
+                node.entry_isp = info.isp
+                node.entry_country = info.country
 
     # 6. 重命名
     rename_nodes(nodes)

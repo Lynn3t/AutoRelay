@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 BASE_PORT = 10000
 
 # 通过代理访问，每个代理 IP 有独立限速配额，不受 runner IP 限制
-IP_API_URL = "http://ip-api.com/json/?fields=status,query,isp"
+IP_API_URL = "http://ip-api.com/json/?fields=status,query,isp,country"
 # 备选（仅获取 IP，无 ISP）
 IP_FALLBACK_URLS = [
     "http://ip.sb",
@@ -83,6 +83,7 @@ async def _test_single(
         if result:
             node.exit_ip = result["ip"]
             node.exit_isp = result.get("isp")
+            node.exit_country = result.get("country")
             node.test_success = True
             logger.debug("节点 %s → 出口 %s (%s)", node.name, result["ip"], result.get("isp", "?"))
         else:
@@ -121,7 +122,7 @@ async def _query_exit_info(port: int, timeout: int) -> Optional[dict]:
         )
         data = json.loads(stdout.decode().strip())
         if data.get("status") == "success" and data.get("query"):
-            return {"ip": data["query"], "isp": data.get("isp")}
+            return {"ip": data["query"], "isp": data.get("isp"), "country": data.get("country")}
     except (asyncio.TimeoutError, json.JSONDecodeError, Exception):
         pass
 

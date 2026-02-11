@@ -80,11 +80,13 @@ class Node:
     # --- 测试结果 (流水线中填充) ---
     entry_ip: Optional[str] = None
     entry_isp: Optional[str] = None
+    entry_country: Optional[str] = None
     exit_ip: Optional[str] = None
     exit_isp: Optional[str] = None
+    exit_country: Optional[str] = None
     test_success: bool = False
     final_name: Optional[str] = None
 
     def dedup_key(self) -> tuple:
-        """用于去重的唯一标识。"""
-        return (self.server, self.port, self.proxy_type)
+        """用于去重的唯一标识：域名 + 入口IP + 出口IP。"""
+        return (self.server, self.entry_ip, self.exit_ip)
