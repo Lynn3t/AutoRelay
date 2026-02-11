@@ -31,10 +31,13 @@ logger = logging.getLogger("autorelay")
 
 
 def deduplicate(nodes: list[Node]) -> list[Node]:
-    """按 (server, entry_ip, exit_ip) 去重，保留首个。"""
+    """按 (server, entry_ip, exit_ip) 去重，仅对成功且三字段齐全的节点去重。"""
     seen: set[tuple] = set()
     result: list[Node] = []
     for node in nodes:
+        if not node.test_success or not node.entry_ip or not node.exit_ip:
+            result.append(node)
+            continue
         key = node.dedup_key()
         if key not in seen:
             seen.add(key)
