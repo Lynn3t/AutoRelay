@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from src.models import Node, ProxyType
 
+# 始终需要 TLS 的协议
+_TLS_REQUIRED = {ProxyType.TUIC, ProxyType.HYSTERIA, ProxyType.HYSTERIA2}
+
 
 def generate_singbox_config(node: Node, listen_port: int) -> dict:
     """生成最小 sing-box 配置：mixed inbound + 单个 proxy outbound。"""
@@ -154,11 +157,15 @@ def _build_tuic(n: Node) -> dict:
 # ---------------------------------------------------------------------------
 
 def _apply_tls(ob: dict, n: Node) -> None:
-    if not n.tls:
+    force_tls = n.proxy_type in _TLS_REQUIRED
+    if not n.tls and not force_tls:
         return
     tls: dict = {"enabled": True}
     if n.sni:
         tls["server_name"] = n.sni
+    elif _is_ip_address(n.server):
+        # IP 地址无法做 TLS 域名验证，必须 insecure
+        tls["insecure"] = True
     if n.skip_cert_verify:
         tls["insecure"] = True
     if n.alpn:
@@ -170,7 +177,23 @@ def _apply_tls(ob: dict, n: Node) -> None:
         if n.reality_short_id:
             reality["short_id"] = n.reality_short_id
         tls["reality"] = reality
+        # Reality 需要 utls 指纹，如果未指定则默认 chrome
+        if "utls" not in tls:
+            tls["utls"] = {"enabled": True, "fingerprint": "chrome"}
+        # Reality 需要 server_name
+        if "server_name" not in tls and n.server:
+            tls["server_name"] = n.sni or n.server
     ob["tls"] = tls
+
+
+def _is_ip_address(server: str) -> bool:
+    """判断 server 是否为 IP 地址。"""
+    import ipaddress
+    try:
+        ipaddress.ip_address(server.strip("[]"))
+        return True
+    except ValueError:
+        return False
 
 
 def _apply_transport(ob: dict, n: Node) -> None:

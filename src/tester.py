@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from typing import Optional
 
 from src.models import Node
@@ -77,7 +78,7 @@ async def _try_once(
         process = await asyncio.create_subprocess_exec(
             singbox_path, "run", "-c", config_path,
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
         )
 
         # 等待 sing-box 启动
@@ -85,7 +86,17 @@ async def _try_once(
 
         # 检查进程是否仍在运行
         if process.returncode is not None:
-            logger.warning("sing-box 启动失败 (exit %d): %s", process.returncode, node.name)
+            stderr_text = ""
+            if process.stderr:
+                try:
+                    raw = await asyncio.wait_for(process.stderr.read(), timeout=2)
+                    stderr_text = _sanitize_log(raw.decode("utf-8", errors="replace"))
+                except asyncio.TimeoutError:
+                    stderr_text = "(read timeout)"
+            logger.warning(
+                "sing-box 启动失败 (exit %d): %s | stderr: %s",
+                process.returncode, node.name, stderr_text or "(empty)",
+            )
             return False
 
         # 通过代理查询 ip-api.com，同时获取出口 IP 和 ISP
@@ -168,3 +179,23 @@ def _is_ip(address: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _sanitize_log(text: str) -> str:
+    """Remove sensitive credentials from sing-box log output."""
+    # Mask UUIDs
+    text = re.sub(
+        r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+        '[UUID]', text, flags=re.IGNORECASE,
+    )
+    # Mask JSON password fields
+    text = re.sub(r'"password"\s*:\s*"[^"]*"', '"password":"[REDACTED]"', text)
+    # Mask auth_str fields
+    text = re.sub(r'"auth_str"\s*:\s*"[^"]*"', '"auth_str":"[REDACTED]"', text)
+    # Mask public_key fields (Reality)
+    text = re.sub(r'"public_key"\s*:\s*"[^"]*"', '"public_key":"[REDACTED]"', text)
+    # Mask short_id fields (Reality)
+    text = re.sub(r'"short_id"\s*:\s*"[^"]*"', '"short_id":"[REDACTED]"', text)
+    # Mask long base64-like strings (potential keys/tokens, 32+ chars)
+    text = re.sub(r'(?<![A-Za-z0-9+/=])[A-Za-z0-9+/=]{32,}(?![A-Za-z0-9+/=])', '[REDACTED_KEY]', text)
+    return text.strip()
