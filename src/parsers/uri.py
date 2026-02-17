@@ -92,6 +92,10 @@ def parse_vmess(uri: str) -> Optional[Node]:
     tls_val = cfg.get("tls", "")
     use_tls = tls_val == "tls"
 
+    # allowInsecure 可能为布尔、字符串 "1"/"true" 或整数
+    allow_insecure_raw = cfg.get("allowInsecure", "")
+    skip_cert = str(allow_insecure_raw).lower() in ("1", "true")
+
     return Node(
         name=cfg.get("ps", "") or f"VMess-{cfg['add']}",
         proxy_type=ProxyType.VMESS,
@@ -103,6 +107,7 @@ def parse_vmess(uri: str) -> Optional[Node]:
         network=network,
         tls=use_tls,
         sni=cfg.get("sni", "") or None,
+        skip_cert_verify=skip_cert,
         ws_path=cfg.get("path", "") or None if network == "ws" else None,
         ws_host=cfg.get("host", "") or None if network == "ws" else None,
         grpc_service_name=cfg.get("path", "") or None if network == "grpc" else None,

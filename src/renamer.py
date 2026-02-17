@@ -222,11 +222,19 @@ def _format_label(country: str | None, isp: str) -> str:
 
 
 def rename_nodes(nodes: list[Node]) -> None:
-    """重命名所有成功测试的节点，处理重复名称。"""
+    """重命名所有成功测试的节点，处理重复名称。
+
+    失败但有入口 ISP 的节点重命名为: entry_isp - 原名。
+    """
     name_count: dict[str, int] = {}
 
     for node in nodes:
         if not node.test_success:
+            # 失败节点：如果有入口 ISP，用 entry_isp - 原名
+            if node.entry_isp:
+                entry_isp = simplify_isp(node.entry_isp)
+                entry_label = _format_label(node.entry_country, entry_isp)
+                node.final_name = f"{entry_label} - {node.name}"
             continue
 
         exit_isp = simplify_isp(node.exit_isp or "")

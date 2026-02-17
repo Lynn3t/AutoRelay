@@ -95,10 +95,11 @@ async def process_subscription(
     logger.info("[%s] 去重: %d → %d", sub_name, before, len(nodes))
 
     # 5. 批量查询入口 ISP + 国家 (ip-api.com batch API)
-    entry_ips = [n.entry_ip for n in nodes if n.entry_ip and n.test_success]
+    #    查询所有已解析入口 IP 的节点（包括测试失败的，用于重命名）
+    entry_ips = [n.entry_ip for n in nodes if n.entry_ip]
     if entry_ips:
         logger.info("[%s] 查询入口 ISP (%d 个 IP)...", sub_name, len(entry_ips))
-        isp_map = await lookup_isps(entry_ips)
+        isp_map = await lookup_isps(list(set(entry_ips)))
         for node in nodes:
             if node.entry_ip and node.entry_ip in isp_map:
                 info = isp_map[node.entry_ip]
