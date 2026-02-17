@@ -55,7 +55,17 @@ async def test_exit_ips(
 async def _test_single(
     node: Node, singbox_path: str, port: int, timeout: int
 ) -> None:
-    """测试单个节点：启动 sing-box → 通过代理查询 ip-api.com → 获取出口 IP + ISP。"""
+    """测试单个节点，失败时重试一次。"""
+    if await _try_once(node, singbox_path, port, timeout):
+        return
+    logger.debug("节点 %s 首次测试失败，重试...", node.name)
+    await _try_once(node, singbox_path, port, timeout)
+
+
+async def _try_once(
+    node: Node, singbox_path: str, port: int, timeout: int
+) -> bool:
+    """单次测试：启动 sing-box → 通过代理查询 ip-api.com → 获取出口 IP + ISP。返回是否成功。"""
     config = generate_singbox_config(node, port)
     config_path = f"/tmp/singbox_{port}.json"
 
@@ -76,7 +86,7 @@ async def _test_single(
         # 检查进程是否仍在运行
         if process.returncode is not None:
             logger.warning("sing-box 启动失败 (exit %d): %s", process.returncode, node.name)
-            return
+            return False
 
         # 通过代理查询 ip-api.com，同时获取出口 IP 和 ISP
         result = await _query_exit_info(port, timeout)
@@ -86,11 +96,14 @@ async def _test_single(
             node.exit_country = result.get("country")
             node.test_success = True
             logger.debug("节点 %s → 出口 %s (%s)", node.name, result["ip"], result.get("isp", "?"))
+            return True
         else:
             logger.debug("节点 %s 无法获取出口信息", node.name)
+            return False
 
     except Exception as e:
         logger.warning("测试节点失败 %s: %s", node.name, e)
+        return False
     finally:
         if process and process.returncode is None:
             process.terminate()
