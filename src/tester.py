@@ -86,13 +86,7 @@ async def _try_once(
 
         # 检查进程是否仍在运行
         if process.returncode is not None:
-            stderr_text = ""
-            if process.stderr:
-                try:
-                    raw = await asyncio.wait_for(process.stderr.read(), timeout=2)
-                    stderr_text = _sanitize_log(raw.decode("utf-8", errors="replace"))
-                except asyncio.TimeoutError:
-                    stderr_text = "(read timeout)"
+            stderr_text = await _read_stderr(process)
             logger.warning(
                 "sing-box 启动失败 (exit %d): %s | stderr: %s",
                 process.returncode, node.name, stderr_text or "(empty)",
@@ -108,9 +102,17 @@ async def _try_once(
             node.test_success = True
             logger.debug("节点 %s → 出口 %s (%s)", node.name, result["ip"], result.get("isp", "?"))
             return True
-        else:
-            logger.debug("节点 %s 无法获取出口信息", node.name)
-            return False
+
+        # 连接失败 — 终止进程并捕获 stderr 以便诊断
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), timeout=3)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+        stderr_text = await _read_stderr(process)
+        logger.warning("节点 %s 连接失败 | stderr: %s", node.name, stderr_text or "(empty)")
+        return False
 
     except Exception as e:
         logger.warning("测试节点失败 %s: %s", node.name, e)
@@ -179,6 +181,17 @@ def _is_ip(address: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+async def _read_stderr(process: asyncio.subprocess.Process) -> str:
+    """Read and sanitize stderr from a (terminated) process."""
+    if not process.stderr:
+        return ""
+    try:
+        raw = await asyncio.wait_for(process.stderr.read(), timeout=2)
+        return _sanitize_log(raw.decode("utf-8", errors="replace"))
+    except (asyncio.TimeoutError, Exception):
+        return "(read error)"
 
 
 def _sanitize_log(text: str) -> str:

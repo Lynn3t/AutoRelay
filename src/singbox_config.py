@@ -11,7 +11,7 @@ _TLS_REQUIRED = {ProxyType.TUIC, ProxyType.HYSTERIA, ProxyType.HYSTERIA2}
 def generate_singbox_config(node: Node, listen_port: int) -> dict:
     """生成最小 sing-box 配置：mixed inbound + 单个 proxy outbound。"""
     return {
-        "log": {"level": "error"},
+        "log": {"level": "warn"},
         "inbounds": [
             {
                 "type": "mixed",
