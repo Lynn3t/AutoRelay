@@ -51,9 +51,10 @@ def _build_ss(n: Node) -> dict:
         "password": n.password or "",
     }
     if n.plugin:
-        ob["plugin"] = n.plugin
-        if n.plugin_opts:
-            ob["plugin_opts"] = n.plugin_opts
+        ob["plugin"] = _singbox_plugin_name(n.plugin)
+        opts_str = _plugin_opts_to_string(n.plugin, n.plugin_opts)
+        if opts_str:
+            ob["plugin_opts"] = opts_str
     return ob
 
 
@@ -223,3 +224,61 @@ def _apply_transport(ob: dict, n: Node) -> None:
         if n.ws_host:
             t["host"] = n.ws_host
         ob["transport"] = t
+
+
+# ---------------------------------------------------------------------------
+# SS plugin 辅助
+# ---------------------------------------------------------------------------
+
+_PLUGIN_NAME_MAP = {
+    "obfs": "obfs-local",
+    "simple-obfs": "obfs-local",
+}
+
+
+def _singbox_plugin_name(clash_name: str) -> str:
+    """Map Clash plugin name to sing-box plugin name."""
+    return _PLUGIN_NAME_MAP.get(clash_name, clash_name)
+
+
+def _plugin_opts_to_string(plugin: str, opts) -> str:
+    """Convert plugin-opts (dict or str) to the semicolon-separated string sing-box expects."""
+    if opts is None:
+        return ""
+    if isinstance(opts, str):
+        return opts
+    if not isinstance(opts, dict):
+        return str(opts)
+
+    normalized = plugin.lower()
+    if normalized in ("obfs", "simple-obfs", "obfs-local"):
+        parts: list[str] = []
+        if opts.get("mode"):
+            parts.append(f"obfs={opts['mode']}")
+        if opts.get("host"):
+            parts.append(f"obfs-host={opts['host']}")
+        return ";".join(parts)
+
+    if normalized == "v2ray-plugin":
+        parts = []
+        if opts.get("mode"):
+            parts.append(f"mode={opts['mode']}")
+        if opts.get("host"):
+            parts.append(f"host={opts['host']}")
+        if opts.get("path"):
+            parts.append(f"path={opts['path']}")
+        if opts.get("tls"):
+            parts.append("tls")
+        if opts.get("mux"):
+            parts.append("mux")
+        return ";".join(parts)
+
+    # Fallback: generic key=value pairs
+    parts = []
+    for k, v in opts.items():
+        if isinstance(v, bool):
+            if v:
+                parts.append(k)
+        else:
+            parts.append(f"{k}={v}")
+    return ";".join(parts)

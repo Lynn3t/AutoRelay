@@ -34,7 +34,7 @@ class Node:
     # --- Shadowsocks ---
     method: Optional[str] = None
     plugin: Optional[str] = None
-    plugin_opts: Optional[str] = None
+    plugin_opts: Optional[Any] = None
 
     # --- VMess ---
     alter_id: int = 0

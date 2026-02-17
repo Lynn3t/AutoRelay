@@ -61,10 +61,8 @@ def _to_ss(n: Node) -> str:
     host = f"[{n.server}]" if ":" in n.server else n.server
     uri = f"ss://{userinfo}@{host}:{n.port}"
     if n.plugin:
-        params = {"plugin": n.plugin}
-        if n.plugin_opts:
-            params["plugin-opts"] = n.plugin_opts
-        uri += "?" + urlencode(params)
+        plugin_str = _format_sip002_plugin(n.plugin, n.plugin_opts)
+        uri += "?" + urlencode({"plugin": plugin_str})
     uri += "#" + quote(_name(n))
     return uri
 
@@ -243,3 +241,59 @@ def _add_transport_params(n: Node, params: dict) -> None:
             params["path"] = n.h2_path
         if n.h2_host:
             params["host"] = n.h2_host[0]
+
+
+_SIP002_PLUGIN_NAME_MAP = {
+    "obfs": "obfs-local",
+    "simple-obfs": "obfs-local",
+}
+
+
+def _format_sip002_plugin(plugin: str, plugin_opts) -> str:
+    """Format plugin name + opts into a single SIP002 plugin query value.
+
+    SIP002 format: ``obfs-local;obfs=tls;obfs-host=example.com``
+    """
+    name = _SIP002_PLUGIN_NAME_MAP.get(plugin, plugin)
+
+    if plugin_opts is None:
+        return name
+
+    if isinstance(plugin_opts, str):
+        return f"{name};{plugin_opts}" if plugin_opts else name
+
+    if isinstance(plugin_opts, dict):
+        normalized = plugin.lower()
+        if normalized in ("obfs", "simple-obfs", "obfs-local"):
+            parts: list[str] = []
+            if plugin_opts.get("mode"):
+                parts.append(f"obfs={plugin_opts['mode']}")
+            if plugin_opts.get("host"):
+                parts.append(f"obfs-host={plugin_opts['host']}")
+            return name + (";" + ";".join(parts) if parts else "")
+
+        if normalized == "v2ray-plugin":
+            parts = []
+            if plugin_opts.get("mode"):
+                parts.append(f"mode={plugin_opts['mode']}")
+            if plugin_opts.get("host"):
+                parts.append(f"host={plugin_opts['host']}")
+            if plugin_opts.get("path"):
+                parts.append(f"path={plugin_opts['path']}")
+            if plugin_opts.get("tls"):
+                parts.append("tls")
+            if plugin_opts.get("mux"):
+                parts.append("mux")
+            return name + (";" + ";".join(parts) if parts else "")
+
+        # Generic fallback
+        parts = []
+        for k, v in plugin_opts.items():
+            if isinstance(v, bool):
+                if v:
+                    parts.append(k)
+            else:
+                parts.append(f"{k}={v}")
+        return name + (";" + ";".join(parts) if parts else "")
+
+    return name

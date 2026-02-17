@@ -72,6 +72,8 @@ def _outbound_to_node(ob: dict) -> Optional[Node]:
             uuid=ob.get("uuid"),
             # SS
             method=ob.get("method"),
+            plugin=_clash_plugin_name(ob.get("plugin")),
+            plugin_opts=_parse_singbox_plugin_opts(ob.get("plugin"), ob.get("plugin_opts")),
             # VMess
             alter_id=int(ob.get("alter_id", 0)),
             security=ob.get("security", "auto"),
@@ -107,3 +109,65 @@ def _outbound_to_node(ob: dict) -> Optional[Node]:
     except Exception as e:
         logger.warning("解析 sing-box outbound 失败: %s — %s", ob.get("tag", "?"), e)
         return None
+
+
+# ---------------------------------------------------------------------------
+# SS plugin 辅助
+# ---------------------------------------------------------------------------
+
+_CLASH_PLUGIN_MAP = {
+    "obfs-local": "obfs",
+    "simple-obfs": "obfs",
+}
+
+
+def _clash_plugin_name(singbox_name: Optional[str]) -> Optional[str]:
+    """Map sing-box plugin name back to Clash-style name for internal model."""
+    if not singbox_name:
+        return None
+    return _CLASH_PLUGIN_MAP.get(singbox_name, singbox_name)
+
+
+def _parse_singbox_plugin_opts(plugin: Optional[str], opts_str: Optional[str]) -> Optional[dict]:
+    """Parse sing-box plugin_opts string into a Clash-style dict."""
+    if not plugin or not opts_str:
+        return None
+
+    normalized = plugin.lower()
+    if normalized in ("obfs-local", "simple-obfs"):
+        opts: dict = {}
+        for part in opts_str.split(";"):
+            part = part.strip()
+            if "=" in part:
+                k, v = part.split("=", 1)
+                if k == "obfs":
+                    opts["mode"] = v
+                elif k == "obfs-host":
+                    opts["host"] = v
+                else:
+                    opts[k] = v
+        return opts or None
+
+    if normalized == "v2ray-plugin":
+        opts = {}
+        for part in opts_str.split(";"):
+            part = part.strip()
+            if "=" in part:
+                k, v = part.split("=", 1)
+                opts[k] = v
+            elif part == "tls":
+                opts["tls"] = True
+            elif part == "mux":
+                opts["mux"] = True
+        return opts or None
+
+    # Generic: return raw string as-is in a dict
+    opts = {}
+    for part in opts_str.split(";"):
+        part = part.strip()
+        if "=" in part:
+            k, v = part.split("=", 1)
+            opts[k] = v
+        elif part:
+            opts[part] = True
+    return opts or None

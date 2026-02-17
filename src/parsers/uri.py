@@ -35,6 +35,68 @@ def _first(qs: dict, key: str, default: str = "") -> str:
     return vals[0] if vals else default
 
 
+_CLASH_PLUGIN_NAME_MAP = {
+    "obfs-local": "obfs",
+    "simple-obfs": "obfs",
+}
+
+
+def _parse_sip002_plugin(raw: str) -> tuple[Optional[str], Optional[dict]]:
+    """Parse SIP002 plugin query value into (plugin_name, plugin_opts_dict).
+
+    Input format: ``obfs-local;obfs=tls;obfs-host=example.com``
+    Returns: (``"obfs"``, ``{"mode": "tls", "host": "example.com"}``)
+    """
+    parts = raw.split(";")
+    sip002_name = parts[0].strip()
+    # Map SIP002/sing-box name back to Clash name
+    plugin_name = _CLASH_PLUGIN_NAME_MAP.get(sip002_name, sip002_name)
+
+    if len(parts) <= 1:
+        return plugin_name or None, None
+
+    opts_parts = parts[1:]
+    normalized = sip002_name.lower()
+
+    if normalized in ("obfs-local", "simple-obfs"):
+        opts: dict = {}
+        for part in opts_parts:
+            part = part.strip()
+            if "=" in part:
+                k, v = part.split("=", 1)
+                if k == "obfs":
+                    opts["mode"] = v
+                elif k == "obfs-host":
+                    opts["host"] = v
+                else:
+                    opts[k] = v
+        return plugin_name or None, opts or None
+
+    if normalized == "v2ray-plugin":
+        opts = {}
+        for part in opts_parts:
+            part = part.strip()
+            if "=" in part:
+                k, v = part.split("=", 1)
+                opts[k] = v
+            elif part == "tls":
+                opts["tls"] = True
+            elif part == "mux":
+                opts["mux"] = True
+        return plugin_name or None, opts or None
+
+    # Generic: store key=value pairs, bare tokens as bool
+    opts = {}
+    for part in opts_parts:
+        part = part.strip()
+        if "=" in part:
+            k, v = part.split("=", 1)
+            opts[k] = v
+        elif part:
+            opts[part] = True
+    return plugin_name or None, opts or None
+
+
 # ---------------------------------------------------------------------------
 # 各协议解析
 # ---------------------------------------------------------------------------
@@ -56,8 +118,9 @@ def parse_ss(uri: str) -> Optional[Node]:
         if "?" in hostport:
             hostport, qs_str = hostport.split("?", 1)
             qs = parse_qs(qs_str)
-            plugin = _first(qs, "plugin")
-            plugin_opts = _first(qs, "plugin-opts")
+            plugin_raw = _first(qs, "plugin")
+            if plugin_raw:
+                plugin, plugin_opts = _parse_sip002_plugin(plugin_raw)
         host, port_s = hostport.rsplit(":", 1)
         decoded = safe_b64decode(userinfo)
         method, password = decoded.split(":", 1)
