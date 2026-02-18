@@ -45,6 +45,20 @@ def deduplicate(nodes: list[Node]) -> list[Node]:
     return result
 
 
+def filter_non_cn_failed(nodes: list[Node]) -> list[Node]:
+    """过滤入口非中国且测试失败的节点。"""
+    result: list[Node] = []
+    for node in nodes:
+        if (
+            not node.test_success
+            and node.entry_country
+            and node.entry_country != "China"
+        ):
+            continue
+        result.append(node)
+    return result
+
+
 def parse_sub_line(line: str) -> tuple[str, str]:
     """解析订阅行，支持 name|url 和纯 url 格式。返回 (name, url)。"""
     line = line.strip()
@@ -61,6 +75,7 @@ async def process_subscription(
     batch_size: int,
     test_timeout: int,
     gist_token: str,
+    drop_non_cn_failed: bool = False,
 ) -> None:
     """处理单条订阅：解析 → DNS → 测试(含出口ISP) → 去重 → 入口ISP → 重命名 → base64 → gist。"""
     logger.info("=" * 60)
@@ -106,15 +121,23 @@ async def process_subscription(
                 node.entry_isp = info.isp
                 node.entry_country = info.country
 
-    # 6. 重命名
+    # 6. 过滤入口非中国且测试失败的节点
+    if drop_non_cn_failed:
+        before = len(nodes)
+        nodes = filter_non_cn_failed(nodes)
+        dropped = before - len(nodes)
+        if dropped:
+            logger.info("[%s] 过滤非CN失败节点: %d → %d (移除 %d)", sub_name, before, len(nodes), dropped)
+
+    # 7. 重命名
     rename_nodes(nodes)
 
-    # 7. 生成 base64 编码的 URI 订阅 (成功节点重命名，失败节点保留原名)
+    # 8. 生成 base64 编码的 URI 订阅 (成功节点重命名，失败节点保留原名)
     b64_content = nodes_to_base64(nodes)
     successful = sum(1 for n in nodes if n.test_success)
     logger.info("[%s] 生成 base64 订阅: %d 个节点 (%d 成功)", sub_name, len(nodes), successful)
 
-    # 8. 上传到独立 Gist
+    # 9. 上传到独立 Gist
     if not gist_token:
         logger.warning("[%s] GIST_TOKEN 未设置，输出到 stdout", sub_name)
         print(f"\n--- {sub_name} ---")
@@ -135,6 +158,7 @@ async def run() -> None:
     singbox_path = os.environ.get("SINGBOX_PATH", "./sing-box")
     batch_size = int(os.environ.get("BATCH_SIZE", "10"))
     test_timeout = int(os.environ.get("TEST_TIMEOUT", "15"))
+    drop_non_cn_failed = os.environ.get("FILTER_NON_CN_FAILED", "true").lower() not in ("0", "false", "no")
 
     # ---- 解析订阅列表 ----
     sub_lines = [l.strip() for l in sub_urls_raw.strip().splitlines() if l.strip()]
@@ -153,7 +177,7 @@ async def run() -> None:
             await process_subscription(
                 sub_name, sub_url,
                 singbox_path, batch_size, test_timeout,
-                gist_token,
+                gist_token, drop_non_cn_failed,
             )
         except Exception as e:
             logger.error("[%s] 处理失败: %s", sub_name, e, exc_info=True)

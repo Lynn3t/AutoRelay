@@ -51,6 +51,7 @@ Dependencies: `pyyaml`, `aiohttp`, `dnspython`, `requests`
 | `SINGBOX_PATH` | No | `./sing-box` | Path to the sing-box binary |
 | `BATCH_SIZE` | No | `10` | Number of nodes to test concurrently per batch |
 | `TEST_TIMEOUT` | No | `15` | Timeout in seconds for each node test |
+| `FILTER_NON_CN_FAILED` | No | `true` | Drop failed nodes whose entry point is outside China |
 
 ### SUB_URLS Format
 
