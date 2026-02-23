@@ -50,7 +50,13 @@ async def test_exit_ips(
         await asyncio.gather(*tasks, return_exceptions=True)
 
         ok = sum(1 for n in batch if n.test_success)
+        isp_ok = sum(1 for n in batch if n.test_success and n.exit_isp)
         logger.info("批次 %d 完成: %d/%d 成功", batch_num, ok, len(batch))
+        if isp_ok < ok:
+            logger.warning(
+                "批次 %d: %d/%d 个成功节点缺少出口 ISP (将显示为 Unknown)",
+                batch_num, ok - isp_ok, ok,
+            )
 
 
 async def _test_single(
@@ -149,10 +155,19 @@ async def _query_exit_info(port: int, timeout: int) -> Optional[dict]:
         data = json.loads(stdout.decode().strip())
         if data.get("status") == "success" and data.get("query"):
             return {"ip": data["query"], "isp": data.get("isp"), "country": data.get("country")}
-    except (asyncio.TimeoutError, json.JSONDecodeError, Exception):
-        pass
+        logger.debug(
+            "ip-api.com 返回非成功状态 (port %d): %s",
+            port, data.get("message", data.get("status")),
+        )
+    except asyncio.TimeoutError:
+        logger.debug("ip-api.com 通过代理查询超时 (port %d)", port)
+    except json.JSONDecodeError as e:
+        logger.debug("ip-api.com 返回非 JSON 响应 (port %d): %s", port, e)
+    except Exception as e:
+        logger.debug("ip-api.com 通过代理查询失败 (port %d): %s", port, e)
 
     # 备选：只获取 IP（无 ISP）
+    logger.debug("ip-api.com 失败，使用备选 URL (port %d)", port)
     for url in IP_FALLBACK_URLS:
         try:
             proc = await asyncio.create_subprocess_exec(
