@@ -82,10 +82,22 @@ def _build_vless(n: Node) -> dict:
         "uuid": n.uuid or "",
     }
     if n.flow:
-        ob["flow"] = n.flow
+        ob["flow"] = _sanitize_flow(n.flow)
     _apply_tls(ob, n)
     _apply_transport(ob, n)
     return ob
+
+
+def _sanitize_flow(flow: str) -> str:
+    """清理 flow 字段，修正重复的 udp443 等错误格式。"""
+    if not flow:
+        return flow
+    # 修正 xtls-rprx-vision-udp443-udp443-udp443 -> xtls-rprx-vision-udp443
+    if flow.startswith("xtls-rprx-vision"):
+        if "-udp443" in flow:
+            return "xtls-rprx-vision-udp443"
+        return "xtls-rprx-vision"
+    return flow
 
 
 def _build_trojan(n: Node) -> dict:
