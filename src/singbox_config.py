@@ -188,7 +188,7 @@ def _apply_tls(ob: dict, n: Node) -> None:
     if n.reality_public_key:
         reality: dict = {"enabled": True, "public_key": n.reality_public_key}
         if n.reality_short_id:
-            reality["short_id"] = n.reality_short_id
+            reality["short_id"] = str(n.reality_short_id)
         tls["reality"] = reality
         # Reality 需要 utls 指纹，如果未指定则默认 chrome
         if "utls" not in tls:
