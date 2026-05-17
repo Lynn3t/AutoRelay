@@ -32,6 +32,8 @@ IP_FALLBACK_URLS = [
     "http://ifconfig.me",
     "http://api.ipify.org",
 ]
+# ISP 补查（当 ip-api.com 拿到 IP 但缺 ISP 时使用）
+IP_SB_GEO_URL = "https://api.ip.sb/geoip"
 
 
 async def test_exit_ips(
@@ -183,7 +185,10 @@ async def _query_exit_info_aiohttp(port: int, timeout: int) -> Optional[dict]:
             async with session.get(IP_API_URL) as resp:
                 data = await resp.json(content_type=None)
                 if data.get("status") == "success" and data.get("query"):
-                    return {"ip": data["query"], "isp": data.get("isp"), "country": data.get("country")}
+                    result = {"ip": data["query"], "isp": data.get("isp"), "country": data.get("country")}
+                    if not result["isp"]:
+                        result = await _supplement_isp(session, result)
+                    return result
                 logger.debug(
                     "ip-api.com 返回非成功状态 (port %d): %s",
                     port, data.get("message", data.get("status")),
@@ -201,20 +206,39 @@ async def _query_exit_info_aiohttp(port: int, timeout: int) -> Optional[dict]:
                 async with session.get(url) as resp:
                     ip = (await resp.text()).strip()
                     if ip and _is_ip(ip):
-                        return {"ip": ip, "isp": None}
+                        result = {"ip": ip, "isp": None}
+                        result = await _supplement_isp(session, result)
+                        return result
         except (asyncio.TimeoutError, Exception):
             continue
     return None
 
 
+async def _supplement_isp(session: aiohttp.ClientSession, result: dict) -> dict:
+    """当 result 缺少 isp 时，通过 ip.sb geo API 补查。"""
+    if result.get("isp"):
+        return result
+    try:
+        async with session.get(IP_SB_GEO_URL) as resp:
+            data = await resp.json(content_type=None)
+            if data.get("isp"):
+                result["isp"] = data["isp"]
+            if data.get("country") and not result.get("country"):
+                result["country"] = data["country"]
+    except Exception as e:
+        logger.debug("ip.sb geo 补查失败: %s", e)
+    return result
+
+
 async def _query_exit_info_curl(port: int, timeout: int) -> Optional[dict]:
     """通过 curl 子进程查询出口信息（降级方案）。"""
+    proxy = f"socks5://127.0.0.1:{port}"
     # 优先用 ip-api.com（同时拿 IP + ISP）
     try:
         proc = await asyncio.create_subprocess_exec(
             "curl", "-s",
             "--max-time", str(timeout),
-            "--proxy", f"socks5://127.0.0.1:{port}",
+            "--proxy", proxy,
             IP_API_URL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
@@ -224,7 +248,10 @@ async def _query_exit_info_curl(port: int, timeout: int) -> Optional[dict]:
         )
         data = json.loads(stdout.decode().strip())
         if data.get("status") == "success" and data.get("query"):
-            return {"ip": data["query"], "isp": data.get("isp"), "country": data.get("country")}
+            result = {"ip": data["query"], "isp": data.get("isp"), "country": data.get("country")}
+            if not result["isp"]:
+                result = await _supplement_isp_curl(proxy, timeout, result)
+            return result
         logger.debug(
             "ip-api.com 返回非成功状态 (port %d): %s",
             port, data.get("message", data.get("status")),
@@ -243,7 +270,7 @@ async def _query_exit_info_curl(port: int, timeout: int) -> Optional[dict]:
             proc = await asyncio.create_subprocess_exec(
                 "curl", "-s",
                 "--max-time", str(timeout),
-                "--proxy", f"socks5://127.0.0.1:{port}",
+                "--proxy", proxy,
                 url,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
@@ -253,10 +280,38 @@ async def _query_exit_info_curl(port: int, timeout: int) -> Optional[dict]:
             )
             ip = stdout.decode().strip()
             if ip and _is_ip(ip):
-                return {"ip": ip, "isp": None}
+                result = {"ip": ip, "isp": None}
+                result = await _supplement_isp_curl(proxy, timeout, result)
+                return result
         except (asyncio.TimeoutError, Exception):
             continue
     return None
+
+
+async def _supplement_isp_curl(proxy: str, timeout: int, result: dict) -> dict:
+    """当 result 缺少 isp 时，通过 curl 查询 ip.sb geo API 补查。"""
+    if result.get("isp"):
+        return result
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "curl", "-s",
+            "--max-time", str(timeout),
+            "--proxy", proxy,
+            IP_SB_GEO_URL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout + 5
+        )
+        data = json.loads(stdout.decode().strip())
+        if data.get("isp"):
+            result["isp"] = data["isp"]
+        if data.get("country") and not result.get("country"):
+            result["country"] = data["country"]
+    except Exception as e:
+        logger.debug("ip.sb geo 补查失败 (curl): %s", e)
+    return result
 
 
 def _is_ip(address: str) -> bool:

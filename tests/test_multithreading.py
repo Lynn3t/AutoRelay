@@ -262,11 +262,14 @@ class TestQueryExitInfo:
                 # Primary ip-api.com fails (invalid JSON)
                 return make_mock_process(returncode=0, stdout=b"not json")
             elif call_count == 2:
-                # First fallback (ip.sb) returns invalid
+                # First fallback (ip.sb plain) returns invalid
                 return make_mock_process(returncode=0, stdout=b"not-an-ip")
             elif call_count == 3:
                 # Second fallback (ifconfig.me) returns valid IP
                 return make_mock_process(returncode=0, stdout=b"9.8.7.6")
+            elif call_count == 4:
+                # ip.sb geo supplement call (fails, no JSON)
+                return make_mock_process(returncode=0, stdout=b"error")
             return make_mock_process(returncode=0, stdout=b"")
 
         with (
@@ -278,7 +281,7 @@ class TestQueryExitInfo:
         assert result is not None
         assert result["ip"] == "9.8.7.6"
         assert result["isp"] is None
-        assert call_count == 3
+        assert call_count == 4
 
     @pytest.mark.asyncio
     async def test_query_exit_info_all_fail(self, make_mock_process):
