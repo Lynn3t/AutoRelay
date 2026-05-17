@@ -119,7 +119,7 @@ async def process_subscription(
     logger.info("[%s] DNS + 出口测试 + 入口 ISP (batch=%d, timeout=%ds)...", sub_name, batch_size, test_timeout)
     await asyncio.gather(
         _resolve_and_lookup_isp(nodes),
-        test_exit_ips(nodes, singbox_path, batch_size, test_timeout, port_offset),
+        test_exit_ips(nodes, singbox_path, batch_size, test_timeout, port_offset, sub_name),
     )
 
     resolved = sum(1 for n in nodes if n.entry_ip)

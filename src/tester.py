@@ -42,44 +42,47 @@ async def test_exit_ips(
     batch_size: int = 10,
     timeout: int = 15,
     port_offset: int = 0,
+    sub_name: str = "",
 ) -> None:
     """分批并发测试所有节点的出口 IP 和 ISP。"""
+    tag = f"[{sub_name}] " if sub_name else ""
     total = len(nodes)
     for i in range(0, total, batch_size):
         batch = nodes[i : i + batch_size]
         batch_num = i // batch_size + 1
         logger.info(
-            "测试批次 %d/%d (%d 个节点)",
+            "%s测试批次 %d/%d (%d 个节点)",
+            tag,
             batch_num,
             (total + batch_size - 1) // batch_size,
             len(batch),
         )
         tasks = [
-            _test_single(node, singbox_path, BASE_PORT + port_offset + j, timeout)
+            _test_single(node, singbox_path, BASE_PORT + port_offset + j, timeout, tag)
             for j, node in enumerate(batch)
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
 
         ok = sum(1 for n in batch if n.test_success)
         isp_ok = sum(1 for n in batch if n.test_success and n.exit_isp)
-        logger.info("批次 %d 完成: %d/%d 成功", batch_num, ok, len(batch))
+        logger.info("%s批次 %d 完成: %d/%d 成功", tag, batch_num, ok, len(batch))
         if isp_ok < ok:
             missing_nodes = [n for n in batch if n.test_success and not n.exit_isp]
             missing_ips = [f"{n.exit_ip} ({n.name})" for n in missing_nodes]
             logger.warning(
-                "批次 %d: %d/%d 个成功节点缺少出口 ISP (将显示为 Unknown): %s",
-                batch_num, ok - isp_ok, ok, ", ".join(missing_ips),
+                "%s批次 %d: %d/%d 个成功节点缺少出口 ISP (将显示为 Unknown): %s",
+                tag, batch_num, ok - isp_ok, ok, ", ".join(missing_ips),
             )
 
 
 async def _test_single(
-    node: Node, singbox_path: str, port: int, timeout: int
+    node: Node, singbox_path: str, port: int, timeout: int, tag: str = ""
 ) -> None:
     """测试单个节点，失败时重试一次。"""
-    if await _try_once(node, singbox_path, port, timeout):
+    if await _try_once(node, singbox_path, port, timeout, tag):
         return
-    logger.debug("节点 %s 首次测试失败，重试...", node.name)
-    await _try_once(node, singbox_path, port, timeout)
+    logger.debug("%s节点 %s 首次测试失败，重试...", tag, node.name)
+    await _try_once(node, singbox_path, port, timeout, tag)
 
 
 async def _wait_for_port(port: int, timeout: float = 5.0, interval: float = 0.1) -> bool:
@@ -97,7 +100,7 @@ async def _wait_for_port(port: int, timeout: float = 5.0, interval: float = 0.1)
 
 
 async def _try_once(
-    node: Node, singbox_path: str, port: int, timeout: int
+    node: Node, singbox_path: str, port: int, timeout: int, tag: str = ""
 ) -> bool:
     """单次测试：启动 sing-box → 通过代理查询 ip-api.com → 获取出口 IP + ISP。返回是否成功。"""
     config = generate_singbox_config(node, port)
@@ -118,8 +121,8 @@ async def _try_once(
         if not await _wait_for_port(port, timeout=5.0):
             stderr_text = await _read_stderr(process)
             logger.warning(
-                "sing-box 启动超时 (port %d): %s | stderr: %s",
-                port, node.name, stderr_text or "(empty)",
+                "%ssing-box 启动超时 (port %d): %s | stderr: %s",
+                tag, port, node.name, stderr_text or "(empty)",
             )
             return False
 
@@ -127,8 +130,8 @@ async def _try_once(
         if process.returncode is not None:
             stderr_text = await _read_stderr(process)
             logger.warning(
-                "sing-box 启动失败 (exit %d): %s | stderr: %s",
-                process.returncode, node.name, stderr_text or "(empty)",
+                "%ssing-box 启动失败 (exit %d): %s | stderr: %s",
+                tag, process.returncode, node.name, stderr_text or "(empty)",
             )
             return False
 
@@ -139,7 +142,7 @@ async def _try_once(
             node.exit_isp = result.get("isp")
             node.exit_country = result.get("country")
             node.test_success = True
-            logger.debug("节点 %s → 出口 %s (%s)", node.name, result["ip"], result.get("isp", "?"))
+            logger.debug("%s节点 %s → 出口 %s (%s)", tag, node.name, result["ip"], result.get("isp", "?"))
             return True
 
         # 连接失败 — 终止进程并捕获 stderr 以便诊断
@@ -150,11 +153,11 @@ async def _try_once(
             process.kill()
             await process.wait()
         stderr_text = await _read_stderr(process)
-        logger.warning("节点 %s 连接失败 | stderr: %s", node.name, stderr_text or "(empty)")
+        logger.warning("%s节点 %s 连接失败 | stderr: %s", tag, node.name, stderr_text or "(empty)")
         return False
 
     except Exception as e:
-        logger.warning("测试节点失败 %s: %s", node.name, e)
+        logger.warning("%s测试节点失败 %s: %s", tag, node.name, e)
         return False
     finally:
         if process and process.returncode is None:
