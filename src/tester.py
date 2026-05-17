@@ -64,9 +64,11 @@ async def test_exit_ips(
         isp_ok = sum(1 for n in batch if n.test_success and n.exit_isp)
         logger.info("批次 %d 完成: %d/%d 成功", batch_num, ok, len(batch))
         if isp_ok < ok:
+            missing_nodes = [n for n in batch if n.test_success and not n.exit_isp]
+            missing_ips = [f"{n.exit_ip} ({n.name})" for n in missing_nodes]
             logger.warning(
-                "批次 %d: %d/%d 个成功节点缺少出口 ISP (将显示为 Unknown)",
-                batch_num, ok - isp_ok, ok,
+                "批次 %d: %d/%d 个成功节点缺少出口 ISP (将显示为 Unknown): %s",
+                batch_num, ok - isp_ok, ok, ", ".join(missing_ips),
             )
 
 
@@ -228,6 +230,8 @@ async def _supplement_isp(session: aiohttp.ClientSession, result: dict) -> dict:
                 result["country"] = data["country"]
     except Exception as e:
         logger.debug("ip.sb geo 补查失败: %s", e)
+    if not result.get("isp"):
+        logger.debug("ip.sb 补查后仍无 ISP，IP: %s", result.get("ip"))
     return result
 
 
@@ -312,6 +316,8 @@ async def _supplement_isp_curl(proxy: str, timeout: int, result: dict) -> dict:
             result["country"] = data["country"]
     except Exception as e:
         logger.debug("ip.sb geo 补查失败 (curl): %s", e)
+    if not result.get("isp"):
+        logger.debug("ip.sb 补查后仍无 ISP，IP: %s", result.get("ip"))
     return result
 
 
