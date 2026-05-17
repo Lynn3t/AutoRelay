@@ -78,6 +78,19 @@ def parse_sub_line(line: str) -> tuple[str, str]:
     return "", line
 
 
+async def _resolve_and_lookup_isp(nodes: list[Node]) -> None:
+    """DNS 解析完成后，立即查询入口 ISP（可与出口测试并行）。"""
+    await resolve_entry_ips(nodes)
+    entry_ips = [n.entry_ip for n in nodes if n.entry_ip]
+    if entry_ips:
+        isp_map = await lookup_isps(list(set(entry_ips)))
+        for node in nodes:
+            if node.entry_ip and node.entry_ip in isp_map:
+                info = isp_map[node.entry_ip]
+                node.entry_isp = info.isp
+                node.entry_country = info.country
+
+
 async def process_subscription(
     sub_name: str,
     sub_url: str,
@@ -86,8 +99,9 @@ async def process_subscription(
     test_timeout: int,
     gist_token: str,
     drop_non_cn_failed: bool = False,
+    port_offset: int = 0,
 ) -> None:
-    """处理单条订阅：解析 → DNS → 测试(含出口ISP) → 去重 → 入口ISP → 重命名 → base64 → gist。"""
+    """处理单条订阅：解析 → DNS+入口ISP+出口测试(并行) → 去重 → 过滤 → 重命名 → base64 → gist。"""
     logger.info("=" * 60)
     logger.info("处理订阅: [%s]", sub_name)
     logger.info("=" * 60)
@@ -100,11 +114,12 @@ async def process_subscription(
 
     logger.info("[%s] 解析 %d 个节点", sub_name, len(nodes))
 
-    # 2 & 3. DNS 解析入口 IP + 并发测试出口 IP（并行执行，互不依赖）
-    logger.info("[%s] 解析入口 IP + 测试出口 IP (batch=%d, timeout=%ds)...", sub_name, batch_size, test_timeout)
+    # 2 & 3 & 5. DNS 解析 + 入口 ISP 查询 + 出口测试（三者并行）
+    #   DNS 先完成 → 入口 ISP 查询立即开始（与出口测试并行）
+    logger.info("[%s] DNS + 出口测试 + 入口 ISP (batch=%d, timeout=%ds)...", sub_name, batch_size, test_timeout)
     await asyncio.gather(
-        resolve_entry_ips(nodes),
-        test_exit_ips(nodes, singbox_path, batch_size, test_timeout),
+        _resolve_and_lookup_isp(nodes),
+        test_exit_ips(nodes, singbox_path, batch_size, test_timeout, port_offset),
     )
 
     resolved = sum(1 for n in nodes if n.entry_ip)
@@ -115,18 +130,6 @@ async def process_subscription(
     before = len(nodes)
     nodes = deduplicate(nodes)
     logger.info("[%s] 去重: %d → %d", sub_name, before, len(nodes))
-
-    # 5. 批量查询入口 ISP + 国家 (ip-api.com batch API)
-    #    查询所有已解析入口 IP 的节点（包括测试失败的，用于重命名）
-    entry_ips = [n.entry_ip for n in nodes if n.entry_ip]
-    if entry_ips:
-        logger.info("[%s] 查询入口 ISP (%d 个 IP)...", sub_name, len(entry_ips))
-        isp_map = await lookup_isps(list(set(entry_ips)))
-        for node in nodes:
-            if node.entry_ip and node.entry_ip in isp_map:
-                info = isp_map[node.entry_ip]
-                node.entry_isp = info.isp
-                node.entry_country = info.country
 
     # 6. 过滤入口非中国且测试失败的节点
     if drop_non_cn_failed:
@@ -143,21 +146,21 @@ async def process_subscription(
     if dropped:
         logger.info("[%s] 过滤出口IDC失败节点: %d → %d (移除 %d)", sub_name, before, len(nodes), dropped)
 
-    # 7. 重命名
+    # 8. 重命名
     rename_nodes(nodes)
 
-    # 8. 生成 base64 编码的 URI 订阅 (成功节点重命名，失败节点保留原名)
+    # 9. 生成 base64 编码的 URI 订阅 (成功节点重命名，失败节点保留原名)
     b64_content = nodes_to_base64(nodes)
     successful = sum(1 for n in nodes if n.test_success)
     logger.info("[%s] 生成 base64 订阅: %d 个节点 (%d 成功)", sub_name, len(nodes), successful)
 
-    # 9. 上传到独立 Gist
+    # 10. 上传到独立 Gist
     if not gist_token:
         logger.warning("[%s] GIST_TOKEN 未设置，输出到 stdout", sub_name)
         print(f"\n--- {sub_name} ---")
         print(b64_content)
     else:
-        upload_to_gist(gist_token, b64_content, sub_name)
+        await upload_to_gist(gist_token, b64_content, sub_name)
         logger.info("[%s] 已上传到 Gist", sub_name)
 
 
@@ -185,16 +188,22 @@ async def run() -> None:
 
     logger.info("共 %d 条订阅: %s", len(subs), ", ".join(n for n, _ in subs))
 
-    # ---- 逐条处理 ----
-    for sub_name, sub_url in subs:
-        try:
-            await process_subscription(
-                sub_name, sub_url,
-                singbox_path, batch_size, test_timeout,
-                gist_token, drop_non_cn_failed,
-            )
-        except Exception as e:
-            logger.error("[%s] 处理失败: %s", sub_name, e, exc_info=True)
+    # ---- 并行处理所有订阅（每条分配独立端口范围） ----
+    port_per_sub = batch_size * 10  # 每条订阅预留足够端口空间
+    tasks = [
+        process_subscription(
+            sub_name, sub_url,
+            singbox_path, batch_size, test_timeout,
+            gist_token, drop_non_cn_failed,
+            port_offset=i * port_per_sub,
+        )
+        for i, (sub_name, sub_url) in enumerate(subs)
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for (sub_name, _), result in zip(subs, results):
+        if isinstance(result, Exception):
+            logger.error("[%s] 处理失败: %s", sub_name, result, exc_info=result)
 
     logger.info("AutoRelay 全部完成")
 

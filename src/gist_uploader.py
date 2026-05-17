@@ -5,14 +5,14 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-import requests
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
 GIST_DESC_PREFIX = "AutoRelay"
 
 
-def upload_to_gist(
+async def upload_to_gist(
     token: str,
     content: str,
     sub_name: str = "default",
@@ -29,7 +29,7 @@ def upload_to_gist(
     description = f"{GIST_DESC_PREFIX} - {sub_name}"
     filename = f"{sub_name}"
 
-    gist_id = _find_existing_gist(headers, description)
+    gist_id = await _find_existing_gist(headers, description)
 
     payload = {
         "description": description,
@@ -39,25 +39,26 @@ def upload_to_gist(
         },
     }
 
-    if gist_id:
-        logger.info("更新已有 Gist [%s]", sub_name)
-        resp = requests.patch(
-            f"https://api.github.com/gists/{gist_id}",
-            headers=headers,
-            json=payload,
-            timeout=30,
-        )
-    else:
-        logger.info("创建新 Gist [%s]", sub_name)
-        resp = requests.post(
-            "https://api.github.com/gists",
-            headers=headers,
-            json=payload,
-            timeout=30,
-        )
+    async with aiohttp.ClientSession() as session:
+        if gist_id:
+            logger.info("更新已有 Gist [%s]", sub_name)
+            resp = await session.patch(
+                f"https://api.github.com/gists/{gist_id}",
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30),
+            )
+        else:
+            logger.info("创建新 Gist [%s]", sub_name)
+            resp = await session.post(
+                "https://api.github.com/gists",
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30),
+            )
 
-    resp.raise_for_status()
-    data = resp.json()
+        resp.raise_for_status()
+        data = await resp.json()
 
     # 取 raw URL (可直接作为订阅链接)
     raw_url = ""
@@ -70,19 +71,20 @@ def upload_to_gist(
     return raw_url or data.get("html_url", "")
 
 
-def _find_existing_gist(headers: dict, description: str) -> Optional[str]:
+async def _find_existing_gist(headers: dict, description: str) -> Optional[str]:
     """通过描述查找已有的 Gist。"""
     try:
-        resp = requests.get(
-            "https://api.github.com/gists",
-            headers=headers,
-            params={"per_page": 100},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        for gist in resp.json():
-            if gist.get("description") == description:
-                return gist["id"]
+        async with aiohttp.ClientSession() as session:
+            resp = await session.get(
+                "https://api.github.com/gists",
+                headers=headers,
+                params={"per_page": 100},
+                timeout=aiohttp.ClientTimeout(total=15),
+            )
+            resp.raise_for_status()
+            for gist in await resp.json():
+                if gist.get("description") == description:
+                    return gist["id"]
     except Exception as e:
         logger.warning("查找 Gist 失败: %s", e)
     return None

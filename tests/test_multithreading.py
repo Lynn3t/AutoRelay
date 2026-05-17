@@ -504,7 +504,7 @@ class TestSubscriptionFetching:
             for n in nodes:
                 n.entry_ip = f"10.0.0.{hash(n.server) % 256}"
 
-        async def mock_test(nodes, sp, bs, to):
+        async def mock_test(nodes, sp, bs, to, po=0):
             for n in nodes:
                 n.test_success = True
                 n.exit_ip = f"20.0.0.{hash(n.server) % 256}"
@@ -517,7 +517,7 @@ class TestSubscriptionFetching:
             patch("src.main.resolve_entry_ips", side_effect=mock_resolve),
             patch("src.main.test_exit_ips", side_effect=mock_test),
             patch("src.main.lookup_isps", side_effect=mock_isps),
-            patch("src.main.upload_to_gist") as mock_gist,
+            patch("src.main.upload_to_gist", new_callable=AsyncMock) as mock_gist,
         ):
             await process_subscription("sub1", "https://sub1.com", "./sb", 10, 15, "token")
             await process_subscription("sub2", "https://sub2.com", "./sb", 10, 15, "token")
@@ -639,7 +639,7 @@ class TestEndToEndPipeline:
             for n in ns:
                 n.entry_ip = f"10.0.0.{int(n.name[1:])}"
 
-        async def mock_test(ns, sp, bs, to):
+        async def mock_test(ns, sp, bs, to, po=0):
             for n in ns:
                 n.test_success = True
                 n.exit_ip = f"20.0.0.{int(n.name[1:])}"
@@ -651,7 +651,7 @@ class TestEndToEndPipeline:
 
         captured_content = {}
 
-        def mock_upload(token, content, sub_name):
+        async def mock_upload(token, content, sub_name):
             captured_content[sub_name] = content
             return "https://gist.github.com/test"
 
@@ -701,7 +701,7 @@ class TestEndToEndPipeline:
             for n in ns:
                 n.entry_ip = f"10.0.0.{int(n.name[1:])}"
 
-        async def mock_test(ns, sp, bs, to):
+        async def mock_test(ns, sp, bs, to, po=0):
             # All tests fail — test_success stays False
             pass
 
@@ -713,7 +713,7 @@ class TestEndToEndPipeline:
             patch("src.main.resolve_entry_ips", side_effect=mock_resolve),
             patch("src.main.test_exit_ips", side_effect=mock_test),
             patch("src.main.lookup_isps", side_effect=mock_isps),
-            patch("src.main.upload_to_gist") as mock_gist,
+            patch("src.main.upload_to_gist", new_callable=AsyncMock) as mock_gist,
         ):
             await process_subscription("fail-sub", "https://fail.com", "./sb", 10, 15, "token")
 

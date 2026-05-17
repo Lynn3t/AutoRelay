@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -20,11 +21,26 @@ BATCH_URL = "http://ip-api.com/batch"
 BATCH_SIZE = 100  # ip-api.com 每次最多 100 个
 RATE_LIMIT_DELAY = 4.5  # 15 req/min → 每次间隔 4 秒留余量
 
+# 全局速率限制器，多个订阅共享
+_rate_lock = asyncio.Lock()
+_last_request_time: float = 0.0
+
 
 @dataclass
 class IpInfo:
     isp: Optional[str] = None
     country: Optional[str] = None
+
+
+async def _rate_limit():
+    """全局速率限制，确保请求间隔足够。"""
+    global _last_request_time
+    async with _rate_lock:
+        now = time.monotonic()
+        elapsed = now - _last_request_time
+        if elapsed < RATE_LIMIT_DELAY:
+            await asyncio.sleep(RATE_LIMIT_DELAY - elapsed)
+        _last_request_time = time.monotonic()
 
 
 async def lookup_isps(ip_list: list[str]) -> dict[str, IpInfo]:
@@ -39,12 +55,9 @@ async def lookup_isps(ip_list: list[str]) -> dict[str, IpInfo]:
     async with aiohttp.ClientSession() as session:
         for i in range(0, len(unique_ips), BATCH_SIZE):
             batch = unique_ips[i : i + BATCH_SIZE]
+            await _rate_limit()
             batch_result = await _query_batch(session, batch)
             result.update(batch_result)
-
-            # 限速: 如果还有后续批次，等待
-            if i + BATCH_SIZE < len(unique_ips):
-                await asyncio.sleep(RATE_LIMIT_DELAY)
 
     found = sum(1 for v in result.values() if v.isp)
     logger.info("ISP 查询完成: %d/%d 成功", found, len(unique_ips))

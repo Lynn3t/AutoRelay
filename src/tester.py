@@ -41,6 +41,7 @@ async def test_exit_ips(
     singbox_path: str,
     batch_size: int = 10,
     timeout: int = 15,
+    port_offset: int = 0,
 ) -> None:
     """分批并发测试所有节点的出口 IP 和 ISP。"""
     total = len(nodes)
@@ -54,7 +55,7 @@ async def test_exit_ips(
             len(batch),
         )
         tasks = [
-            _test_single(node, singbox_path, BASE_PORT + j, timeout)
+            _test_single(node, singbox_path, BASE_PORT + port_offset + j, timeout)
             for j, node in enumerate(batch)
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
