@@ -9,9 +9,16 @@ _TLS_REQUIRED = {ProxyType.TUIC, ProxyType.HYSTERIA, ProxyType.HYSTERIA2}
 
 
 def generate_singbox_config(node: Node, listen_port: int) -> dict:
-    """生成最小 sing-box 配置：mixed inbound + 单个 proxy outbound。"""
+    """生成最小 sing-box 配置：mixed inbound + 单个 proxy outbound + DNS。"""
     return {
         "log": {"level": "warn"},
+        "dns": {
+            "servers": [
+                {"address": "223.5.5.5", "tag": "alidns"},
+                {"address": "119.29.29.29", "tag": "dnspod"},
+            ],
+            "final": "alidns",
+        },
         "inbounds": [
             {
                 "type": "mixed",
