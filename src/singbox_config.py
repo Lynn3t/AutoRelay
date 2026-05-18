@@ -14,8 +14,8 @@ def generate_singbox_config(node: Node, listen_port: int) -> dict:
         "log": {"level": "warn"},
         "dns": {
             "servers": [
-                {"address": "223.5.5.5", "tag": "alidns"},
-                {"address": "119.29.29.29", "tag": "dnspod"},
+                {"address": "223.5.5.5", "tag": "alidns", "detour": "direct"},
+                {"address": "119.29.29.29", "tag": "dnspod", "detour": "direct"},
             ],
             "final": "alidns",
         },
@@ -27,7 +27,10 @@ def generate_singbox_config(node: Node, listen_port: int) -> dict:
                 "listen_port": listen_port,
             }
         ],
-        "outbounds": [_build_outbound(node)],
+        "outbounds": [
+            _build_outbound(node),
+            {"type": "direct", "tag": "direct"},
+        ],
     }
 
 
