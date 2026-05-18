@@ -44,35 +44,45 @@ async def test_exit_ips(
     port_offset: int = 0,
     sub_name: str = "",
 ) -> None:
-    """分批并发测试所有节点的出口 IP 和 ISP。"""
+    """使用信号量并发测试所有节点的出口 IP 和 ISP。batch_size 作为最大并发数。"""
     tag = f"[{sub_name}] " if sub_name else ""
     total = len(nodes)
-    for i in range(0, total, batch_size):
-        batch = nodes[i : i + batch_size]
-        batch_num = i // batch_size + 1
-        logger.info(
-            "%s测试批次 %d/%d (%d 个节点)",
-            tag,
-            batch_num,
-            (total + batch_size - 1) // batch_size,
-            len(batch),
-        )
-        tasks = [
-            _test_single(node, singbox_path, BASE_PORT + port_offset + j, timeout, tag)
-            for j, node in enumerate(batch)
-        ]
-        await asyncio.gather(*tasks, return_exceptions=True)
+    sem = asyncio.Semaphore(batch_size)
+    counter = {"done": 0, "ok": 0, "isp_ok": 0}
+    lock = asyncio.Lock()
+    milestones = {total // 4, total // 2, total * 3 // 4, total}
 
-        ok = sum(1 for n in batch if n.test_success)
-        isp_ok = sum(1 for n in batch if n.test_success and n.exit_isp)
-        logger.info("%s批次 %d 完成: %d/%d 成功", tag, batch_num, ok, len(batch))
-        if isp_ok < ok:
-            missing_nodes = [n for n in batch if n.test_success and not n.exit_isp]
-            missing_ips = [f"{n.exit_ip} ({n.name})" for n in missing_nodes]
-            logger.warning(
-                "%s批次 %d: %d/%d 个成功节点缺少出口 ISP (将显示为 Unknown): %s",
-                tag, batch_num, ok - isp_ok, ok, ", ".join(missing_ips),
-            )
+    logger.info("%s开始测试 %d 个节点 (并发=%d)", tag, total, batch_size)
+
+    async def _task(node: Node, idx: int) -> None:
+        async with sem:
+            await _test_single(node, singbox_path, BASE_PORT + port_offset + idx, timeout, tag)
+        async with lock:
+            counter["done"] += 1
+            if node.test_success:
+                counter["ok"] += 1
+                if node.exit_isp:
+                    counter["isp_ok"] += 1
+            done = counter["done"]
+            if done in milestones:
+                logger.info(
+                    "%s进度 %d/%d (%.0f%%)",
+                    tag, done, total, done / total * 100,
+                )
+
+    tasks = [_task(node, j) for j, node in enumerate(nodes)]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    ok = counter["ok"]
+    isp_ok = counter["isp_ok"]
+    logger.info("%s测试完成: %d/%d 成功", tag, ok, total)
+    if isp_ok < ok:
+        missing_nodes = [n for n in nodes if n.test_success and not n.exit_isp]
+        missing_ips = [f"{n.exit_ip} ({n.name})" for n in missing_nodes]
+        logger.warning(
+            "%s%d/%d 个成功节点缺少出口 ISP (将显示为 Unknown): %s",
+            tag, ok - isp_ok, ok, ", ".join(missing_ips),
+        )
 
 
 async def _test_single(
