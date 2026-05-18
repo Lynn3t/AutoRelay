@@ -60,10 +60,14 @@ def filter_non_cn_failed(nodes: list[Node]) -> list[Node]:
 
 
 def filter_exit_idc_failed(nodes: list[Node]) -> list[Node]:
-    """过滤出口 IDC 解析失败的节点，但入口为中国的保留。"""
+    """过滤测试成功但出口 ISP 解析失败的节点，入口为中国的保留。测试失败的节点不受此过滤影响。"""
     result: list[Node] = []
     for node in nodes:
-        if not node.exit_isp and node.entry_country != "China":
+        if (
+            node.test_success
+            and not node.exit_isp
+            and node.entry_country != "China"
+        ):
             continue
         result.append(node)
     return result
