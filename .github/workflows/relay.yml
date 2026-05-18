@@ -7,6 +7,9 @@ on:
     - cron: '0 * * * *'  # 每小时
   workflow_dispatch:         # 手动触发
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   relay:
     runs-on: ubuntu-latest
